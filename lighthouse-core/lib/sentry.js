@@ -22,7 +22,6 @@ const sentryApi = {
 
 const IGNORED_ERRORS = [
   /Unable to load/, // see https://github.com/GoogleChrome/lighthouse/issues/2784
-  /Tracing already started/, // see https://github.com/GoogleChrome/lighthouse/issues/1091
 ];
 
 /**
@@ -49,23 +48,25 @@ sentryDelegate.init = function init(opts) {
     });
 
     // Special case captureException to return a Promise so we don't process.exit too early
-    sentryDelegate.captureException = (...args) => {
+    sentryDelegate.captureException = (err, opts) => {
+      opts = opts || {};
+
       const empty = Promise.resolve();
+      // Ignore if there wasn't an error
+      if (!err) return empty;
       // Ignore expected errors
-      if (args[0] && args[0].expected) return empty;
+      if (err.expected) return empty;
       // Ignore errors matching our shortlist
-      if (args[0] && IGNORED_ERRORS.some(regex => regex.test(args[0].message))) return empty;
-      // Only report 25% of production errors
-      if (!isDevelopment && Math.random() > 0.25) return empty;
+      if (IGNORED_ERRORS.some(regex => regex.test(err.message))) return empty;
+      // Only report 50% of production errors
+      if (!isDevelopment && Math.random() > 0.50) return empty;
       // Protocol errors all share same stack trace, so add more to fingerprint
-      if (args[0] && args[0].protocolMethod) {
-        const opts = args[1] || {};
-        opts.fingerprint = ['{{ default }}', args[0].protocolMethod, args[0].protocolError];
-        args = [args[0], opts];
+      if (err.protocolMethod) {
+        opts.fingerprint = ['{{ default }}', err.protocolMethod, err.protocolError];
       }
 
       return new Promise(resolve => {
-        Sentry.captureException(...args, () => resolve());
+        Sentry.captureException(err, opts, () => resolve());
       });
     };
   } catch (e) {
